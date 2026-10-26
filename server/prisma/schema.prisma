@@ -1,0 +1,81 @@
+// Beacon support desk data model.
+//
+// SQLite has no native enums, so status / priority / role / event type are
+// stored as strings and validated in the domain layer (src/domain/*).
+
+generator client {
+  provider      = "prisma-client-js"
+  // "rhel-openssl-3.0.x" is the runtime used by Netlify Functions (AWS Lambda).
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  /// CUSTOMER | AGENT
+  role      String
+  title     String?
+  company   String?
+  createdAt DateTime @default(now())
+
+  ticketsSubmitted Ticket[]        @relation("TicketCustomer")
+  ticketsAssigned  Ticket[]        @relation("TicketAssignee")
+  timelineEvents   TimelineEvent[]
+}
+
+model Ticket {
+  id          String    @id @default(cuid())
+  /// Human-friendly sequential number shown in the UI (e.g. #1042).
+  number      Int       @unique
+  subject     String
+  description String
+  /// LOW | MEDIUM | HIGH
+  priority    String
+  /// BILLING | TECHNICAL | ACCOUNT | FEATURE_REQUEST | BUG | OTHER
+  category    String
+  /// OPEN | IN_PROGRESS | WAITING_FOR_CUSTOMER | RESOLVED | CLOSED
+  status      String    @default("OPEN")
+  customerId  String
+  assigneeId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// Set when the ticket is resolved/closed (stops the SLA clock); cleared on reopen.
+  resolvedAt  DateTime?
+
+  customer User            @relation("TicketCustomer", fields: [customerId], references: [id])
+  assignee User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  events   TimelineEvent[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([assigneeId])
+  @@index([customerId])
+}
+
+/// Append-only audit history. Every creation, status change, assignment,
+/// reply and internal note is written here and never updated.
+model TimelineEvent {
+  id        String   @id @default(cuid())
+  ticketId  String
+  actorId   String
+  /// CREATED | STATUS_CHANGED | ASSIGNED | REPLY | NOTE
+  type      String
+  /// Previous value (status, or assignee id) for STATUS_CHANGED / ASSIGNED.
+  fromValue String?
+  /// New value (status, or assignee id) for STATUS_CHANGED / ASSIGNED.
+  toValue   String?
+  /// Message body for REPLY / NOTE.
+  body      String?
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User   @relation(fields: [actorId], references: [id])
+
+  @@index([ticketId, createdAt])
+}

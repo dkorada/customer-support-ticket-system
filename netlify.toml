@@ -1,0 +1,41 @@
+# Netlify: the React app is served as static files and the Express API runs
+# as a single Netlify Function (netlify/functions/api.ts).
+
+[build]
+  command = "npm run build"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  # Prisma loads its query engine binary at runtime, so it is shipped as-is
+  # instead of being bundled.
+  external_node_modules = ["@prisma/client", ".prisma"]
+  included_files = [
+    "node_modules/.prisma/client/**",
+    # Keep the bundle small: only the Lambda engine and the Node library runtime are needed.
+    "!node_modules/.prisma/client/libquery_engine-debian-*",
+    "!node_modules/.prisma/client/*.wasm",
+    "!node_modules/@prisma/client/runtime/*wasm*",
+    "!node_modules/@prisma/client/runtime/edge*",
+    "!node_modules/@prisma/client/runtime/react-native*",
+    "!node_modules/typescript/**",
+  ]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
